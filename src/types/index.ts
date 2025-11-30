@@ -20,17 +20,15 @@ export interface Pedido {
 }
 
 export interface ModuloDetalle {
+  id?: number;
   estado: EstadoModulo;
   fechaInicio?: string;
   fechaFin?: string;
   observaciones: string;
-  operario: string;
+  operario?: string;
 }
 
-export interface ModuloTransporteDetalle {
-  estado: boolean;
-  observaciones: string;
-}
+export type ModuloTransporteDetalle = ModuloDetalle;
 
 export interface Usuario {
   id: string;

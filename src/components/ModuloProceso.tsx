@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Wrench, Square as WindowIcon, Blinds, Truck } from 'lucide-react';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
@@ -7,30 +7,60 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
-import { ModuloDetalle, ModuloTransporteDetalle, Modulo, EstadoModulo, Usuario } from '../types';
+import { ModuloDetalle, Modulo, EstadoModulo, Usuario } from '../types';
+import { formatDate } from '../lib/formatDate';
 
 interface ModuloProcesoProps {
-  tipo: Modulo | 'Transporte';
-  datos: ModuloDetalle | ModuloTransporteDetalle;
+  tipo: Modulo;
+  datos: ModuloDetalle;
   usuario: Usuario;
-  onUpdate: (datos: ModuloDetalle | ModuloTransporteDetalle) => void;
+  onUpdate: (datos: ModuloDetalle) => void;
 }
+
+const estadoOpciones: EstadoModulo[] = ['Completado', 'En proceso', 'Pendiente', 'Bloqueado'];
 
 export function ModuloProceso({ tipo, datos, usuario, onUpdate }: ModuloProcesoProps) {
   const [editMode, setEditMode] = useState(false);
-  const [formData, setFormData] = useState(datos);
+  const [formData, setFormData] = useState<ModuloDetalle>(datos);
+
+  useEffect(() => {
+    setFormData(datos);
+  }, [datos]);
 
   const moduloConfig = {
-    'Fabricación': { color: 'bg-blue-500', icon: Wrench, label: '🧱 Fabricación' },
-    'Cristal': { color: 'bg-green-500', icon: WindowIcon, label: '🪟 Cristal' },
-    'Persianas': { color: 'bg-orange-500', icon: Blinds, label: '🌀 Persianas' },
-    'Transporte': { color: 'bg-red-500', icon: Truck, label: '🚚 Transporte' },
-  };
+    Fabricación: {
+      gradient: 'from-blue-50 to-white',
+      icon: Wrench,
+      border: 'border-blue-200',
+      label: 'Fabricación',
+    },
+    Cristal: {
+      gradient: 'from-emerald-50 to-white',
+      icon: WindowIcon,
+      border: 'border-emerald-200',
+      label: 'Cristal',
+    },
+    Persianas: {
+      gradient: 'from-amber-50 to-white',
+      icon: Blinds,
+      border: 'border-amber-200',
+      label: 'Persianas',
+    },
+    Transporte: {
+      gradient: 'from-rose-50 to-white',
+      icon: Truck,
+      border: 'border-rose-200',
+      label: 'Transporte',
+    },
+  } as const;
 
   const config = moduloConfig[tipo];
   const Icon = config.icon;
 
-  const canEdit = usuario.rol === 'Admin' || usuario.rol === 'Oficina' || usuario.modulosAsignados.includes(tipo as Modulo);
+  const canEdit =
+    usuario.rol === 'Admin' ||
+    usuario.rol === 'Oficina' ||
+    usuario.modulosAsignados.includes(tipo);
 
   const handleSave = () => {
     onUpdate(formData);
@@ -42,25 +72,21 @@ export function ModuloProceso({ tipo, datos, usuario, onUpdate }: ModuloProcesoP
     setEditMode(false);
   };
 
-  const isTransporte = tipo === 'Transporte';
-  const datosModulo = datos as ModuloDetalle;
-  const datosTransporte = datos as ModuloTransporteDetalle;
-  const formDataModulo = formData as ModuloDetalle;
-  const formDataTransporte = formData as ModuloTransporteDetalle;
-
   return (
-    <Card className={`${config.color} text-white p-6`}>
+    <Card className={`rounded-[28px] border ${config.border} bg-gradient-to-br ${config.gradient} p-6 shadow-[0_25px_55px_-35px_rgba(15,23,42,0.45)]`}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <Icon className="w-8 h-8" />
-          <h3 className="text-white">{config.label}</h3>
+          <div className="rounded-2xl bg-white p-3 shadow-sm">
+            <Icon className="w-5 h-5 text-slate-600" />
+          </div>
+          <h3 className="text-base font-semibold text-slate-900">{config.label}</h3>
         </div>
         {canEdit && !editMode && (
           <Button
             variant="outline"
             size="sm"
             onClick={() => setEditMode(true)}
-            className="bg-white/20 hover:bg-white/30 text-white border-white/30"
+            className="rounded-full border-slate-200 text-slate-600 hover:bg-slate-100"
           >
             Editar
           </Button>
@@ -69,128 +95,101 @@ export function ModuloProceso({ tipo, datos, usuario, onUpdate }: ModuloProcesoP
 
       {editMode ? (
         <div className="space-y-4">
-          {isTransporte ? (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor={`${tipo}-estado`} className="text-white">Estado</Label>
-                <Select
-                  value={formDataTransporte.estado ? 'si' : 'no'}
-                  onValueChange={(value) => 
-                    setFormData({ ...formDataTransporte, estado: value === 'si' })
-                  }
-                >
-                  <SelectTrigger className="bg-white/10 border-white/30 text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="si">Sí</SelectItem>
-                    <SelectItem value="no">No</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${tipo}-estado`} className="text-slate-600">
+              Estado
+            </Label>
+            <Select
+              value={formData.estado}
+              onValueChange={(value: EstadoModulo) =>
+                setFormData({ ...formData, estado: value })
+              }
+            >
+              <SelectTrigger className="border-slate-200">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {estadoOpciones.map((estado) => (
+                  <SelectItem key={estado} value={estado}>
+                    {estado}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-              <div className="space-y-2">
-                <Label htmlFor={`${tipo}-observaciones`} className="text-white">Observaciones</Label>
-                <Textarea
-                  id={`${tipo}-observaciones`}
-                  value={formDataTransporte.observaciones}
-                  onChange={(e) => 
-                    setFormData({ ...formDataTransporte, observaciones: e.target.value })
-                  }
-                  className="bg-white/10 border-white/30 text-white placeholder:text-white/50"
-                  rows={3}
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor={`${tipo}-estado`} className="text-white">Estado</Label>
-                <Select
-                  value={formDataModulo.estado}
-                  onValueChange={(value: EstadoModulo) => 
-                    setFormData({ ...formDataModulo, estado: value })
-                  }
-                >
-                  <SelectTrigger className="bg-white/10 border-white/30 text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Completado">Completado</SelectItem>
-                    <SelectItem value="En proceso">En proceso</SelectItem>
-                    <SelectItem value="Pendiente">Pendiente</SelectItem>
-                    <SelectItem value="Bloqueado">Bloqueado</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor={`${tipo}-inicio`} className="text-slate-600">
+                Fecha de inicio
+              </Label>
+              <Input
+                id={`${tipo}-inicio`}
+                type="date"
+                value={formData.fechaInicio || ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, fechaInicio: e.target.value })
+                }
+                className="border-slate-200"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${tipo}-fin`} className="text-slate-600">
+                Fecha de fin
+              </Label>
+              <Input
+                id={`${tipo}-fin`}
+                type="date"
+                value={formData.fechaFin || ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, fechaFin: e.target.value })
+                }
+                className="border-slate-200"
+              />
+            </div>
+          </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor={`${tipo}-fechaInicio`} className="text-white">Fecha Inicio</Label>
-                  <Input
-                    id={`${tipo}-fechaInicio`}
-                    type="date"
-                    value={formDataModulo.fechaInicio || ''}
-                    onChange={(e) => 
-                      setFormData({ ...formDataModulo, fechaInicio: e.target.value })
-                    }
-                    className="bg-white/10 border-white/30 text-white"
-                  />
-                </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${tipo}-operario`} className="text-slate-600">
+              Operario
+            </Label>
+            <Input
+              id={`${tipo}-operario`}
+              value={formData.operario || ''}
+              onChange={(e) =>
+                setFormData({ ...formData, operario: e.target.value })
+              }
+              className="border-slate-200"
+              placeholder="Nombre del operario"
+            />
+          </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor={`${tipo}-fechaFin`} className="text-white">Fecha Fin</Label>
-                  <Input
-                    id={`${tipo}-fechaFin`}
-                    type="date"
-                    value={formDataModulo.fechaFin || ''}
-                    onChange={(e) => 
-                      setFormData({ ...formDataModulo, fechaFin: e.target.value })
-                    }
-                    className="bg-white/10 border-white/30 text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor={`${tipo}-operario`} className="text-white">Operario</Label>
-                <Input
-                  id={`${tipo}-operario`}
-                  value={formDataModulo.operario}
-                  onChange={(e) => 
-                    setFormData({ ...formDataModulo, operario: e.target.value })
-                  }
-                  className="bg-white/10 border-white/30 text-white placeholder:text-white/50"
-                  placeholder="Nombre del operario"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor={`${tipo}-observaciones`} className="text-white">Observaciones</Label>
-                <Textarea
-                  id={`${tipo}-observaciones`}
-                  value={formDataModulo.observaciones}
-                  onChange={(e) => 
-                    setFormData({ ...formDataModulo, observaciones: e.target.value })
-                  }
-                  className="bg-white/10 border-white/30 text-white placeholder:text-white/50"
-                  rows={3}
-                />
-              </div>
-            </>
-          )}
+          <div className="space-y-2">
+            <Label htmlFor={`${tipo}-observaciones`} className="text-slate-600">
+              Observaciones
+            </Label>
+            <Textarea
+              id={`${tipo}-observaciones`}
+              value={formData.observaciones || ''}
+              onChange={(e) =>
+                setFormData({ ...formData, observaciones: e.target.value })
+              }
+              className="border-slate-200"
+              rows={3}
+            />
+          </div>
 
           <div className="flex gap-2 pt-2">
             <Button
               onClick={handleSave}
-              className="bg-white text-gray-900 hover:bg-gray-100"
+              className="rounded-full bg-slate-900 text-white hover:bg-slate-800"
             >
               Guardar
             </Button>
             <Button
               onClick={handleCancel}
               variant="outline"
-              className="bg-white/20 hover:bg-white/30 text-white border-white/30"
+              className="rounded-full border-slate-300 text-slate-600 hover:bg-slate-100"
             >
               Cancelar
             </Button>
@@ -198,58 +197,39 @@ export function ModuloProceso({ tipo, datos, usuario, onUpdate }: ModuloProcesoP
         </div>
       ) : (
         <div className="space-y-3">
-          {isTransporte ? (
-            <>
-              <div>
-                <p className="text-white/80 text-sm mb-1">Estado</p>
-                <Badge className="bg-white/20 text-white border-white/30">
-                  {datosTransporte.estado ? 'Sí' : 'No'}
-                </Badge>
-              </div>
-              {datosTransporte.observaciones && (
+          <div>
+            <p className="text-slate-500 text-sm mb-1">Estado</p>
+            <Badge className="rounded-full bg-slate-900/5 text-slate-700 border border-slate-200">
+              {datos.estado}
+            </Badge>
+          </div>
+          {(datos.fechaInicio || datos.fechaFin) && (
+            <div className="grid grid-cols-2 gap-3">
+              {datos.fechaInicio && (
                 <div>
-                  <p className="text-white/80 text-sm mb-1">Observaciones</p>
-                  <p className="text-white">{datosTransporte.observaciones}</p>
+                  <p className="text-slate-500 text-sm mb-1">Inicio</p>
+                  <p className="text-slate-900">{formatDate(datos.fechaInicio)}</p>
                 </div>
               )}
-            </>
-          ) : (
-            <>
-              <div>
-                <p className="text-white/80 text-sm mb-1">Estado</p>
-                <Badge className="bg-white/20 text-white border-white/30">
-                  {datosModulo.estado}
-                </Badge>
-              </div>
-              {(datosModulo.fechaInicio || datosModulo.fechaFin) && (
-                <div className="grid grid-cols-2 gap-3">
-                  {datosModulo.fechaInicio && (
-                    <div>
-                      <p className="text-white/80 text-sm mb-1">Inicio</p>
-                      <p className="text-white">{datosModulo.fechaInicio}</p>
-                    </div>
-                  )}
-                  {datosModulo.fechaFin && (
-                    <div>
-                      <p className="text-white/80 text-sm mb-1">Fin</p>
-                      <p className="text-white">{datosModulo.fechaFin}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-              {datosModulo.operario && (
+              {datos.fechaFin && (
                 <div>
-                  <p className="text-white/80 text-sm mb-1">Operario</p>
-                  <p className="text-white">{datosModulo.operario}</p>
+                  <p className="text-slate-500 text-sm mb-1">Fin</p>
+                  <p className="text-slate-900">{formatDate(datos.fechaFin)}</p>
                 </div>
               )}
-              {datosModulo.observaciones && (
-                <div>
-                  <p className="text-white/80 text-sm mb-1">Observaciones</p>
-                  <p className="text-white">{datosModulo.observaciones}</p>
-                </div>
-              )}
-            </>
+            </div>
+          )}
+          {datos.operario && (
+            <div>
+              <p className="text-slate-500 text-sm mb-1">Operario</p>
+              <p className="text-slate-900">{datos.operario}</p>
+            </div>
+          )}
+          {datos.observaciones && (
+            <div>
+              <p className="text-slate-500 text-sm mb-1">Observaciones</p>
+              <p className="text-slate-900">{datos.observaciones}</p>
+            </div>
           )}
         </div>
       )}

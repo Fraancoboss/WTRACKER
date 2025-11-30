@@ -2,31 +2,59 @@ import { useState } from 'react';
 import { Search, Package, Edit } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Pedido, Usuario, ModuloDetalle, ModuloTransporteDetalle } from '../types';
+import { Pedido, Usuario, ModuloDetalle, Modulo } from '../types';
 import { ModuloProceso } from './ModuloProceso';
 import { Badge } from './ui/badge';
 import { EditarPedidoDialog } from './EditarPedidoDialog';
+import { fetchPedidoById } from '../lib/api';
+import { useToast } from './ui/use-toast';
+import { formatDate } from '../lib/formatDate';
+
+const glassPanelClass = 'panel-card';
 
 interface DetallePedidoProps {
-  pedidos: Pedido[];
   usuario: Usuario;
-  onUpdatePedido: (pedido: Pedido) => void;
+  onUpdatePedido: (pedido: Pedido) => Promise<Pedido>;
 }
 
-export function DetallePedido({ pedidos, usuario, onUpdatePedido }: DetallePedidoProps) {
+export function DetallePedido({ usuario, onUpdatePedido }: DetallePedidoProps) {
   const [pedidoId, setPedidoId] = useState('');
   const [pedidoActual, setPedidoActual] = useState<Pedido | null>(null);
   const [editarDialogOpen, setEditarDialogOpen] = useState(false);
+  const [buscando, setBuscando] = useState(false);
+  const [busquedaRealizada, setBusquedaRealizada] = useState(false);
+  const { toast } = useToast();
 
   // Verificar si el usuario puede editar pedidos (Admin u Oficina)
   const puedeEditarPedido = usuario.rol === 'Admin' || usuario.rol === 'Oficina';
 
-  const handleBuscar = () => {
-    const pedido = pedidos.find((p) => p.id === pedidoId);
-    setPedidoActual(pedido || null);
+  const buscarPedido = async () => {
+    if (!pedidoId.trim()) return;
+
+    setBuscando(true);
+    setBusquedaRealizada(true);
+
+    try {
+      const pedido = await fetchPedidoById(pedidoId.trim());
+      setPedidoActual(pedido);
+    } catch (error) {
+      console.error(error);
+      setPedidoActual(null);
+      toast({
+        variant: 'destructive',
+        title: 'Pedido no encontrado',
+        description: 'Revisa el ID e inténtalo nuevamente.',
+      });
+    } finally {
+      setBuscando(false);
+    }
   };
 
-  const handleUpdateModulo = (tipo: string, datos: ModuloDetalle | ModuloTransporteDetalle) => {
+  const handleBuscar = () => {
+    void buscarPedido();
+  };
+
+  const handleUpdateModulo = async (tipo: Modulo, datos: ModuloDetalle) => {
     if (!pedidoActual) return;
 
     const pedidoActualizado = { ...pedidoActual };
@@ -42,7 +70,7 @@ export function DetallePedido({ pedidos, usuario, onUpdatePedido }: DetallePedid
         pedidoActualizado.moduloPersianas = datos as ModuloDetalle;
         break;
       case 'Transporte':
-        pedidoActualizado.moduloTransporte = datos as ModuloTransporteDetalle;
+        pedidoActualizado.moduloTransporte = datos;
         break;
     }
 
@@ -63,152 +91,167 @@ export function DetallePedido({ pedidos, usuario, onUpdatePedido }: DetallePedid
       pedidoActualizado.estado = 'No iniciado';
     }
 
-    setPedidoActual(pedidoActualizado);
-    onUpdatePedido(pedidoActualizado);
+    try {
+      const pedidoGuardado = await onUpdatePedido(pedidoActualizado);
+      setPedidoActual(pedidoGuardado);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
-  const handleGuardarEdicion = (pedidoEditado: Pedido) => {
-    setPedidoActual(pedidoEditado);
-    onUpdatePedido(pedidoEditado);
+  const handleGuardarEdicion = async (pedidoEditado: Pedido) => {
+    try {
+      const pedidoGuardado = await onUpdatePedido(pedidoEditado);
+      setPedidoActual(pedidoGuardado);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   return (
-    <div className="flex-1 bg-gray-50 p-8">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-gray-900 mb-1">Detalle del Pedido</h1>
-          <p className="text-gray-600 mb-6">Busca un pedido para ver y editar su información</p>
+    <div className="detalle">
+      <div className={`${glassPanelClass} detalle__hero`}>
+        <div className="detalle__header">
+          <div>
+            <p className="detalle__eyebrow">Detalle</p>
+            <h1 className="detalle__title">Consulta de pedidos</h1>
+          </div>
+        </div>
 
-          {/* Search */}
-          <div className="flex gap-3">
+        <div className="detalle__search">
+          <div className="detalle__search-pill">
+            <div className="detalle__search-icon">
+              <Search className="w-4 h-4" />
+            </div>
             <Input
               placeholder="Escribe el ID del pedido (ej: PED-2025-001)"
               value={pedidoId}
               onChange={(e) => setPedidoId(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleBuscar()}
-              className="flex-1"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleBuscar();
+                }
+              }}
+              className="detalle__search-input"
             />
-            <Button onClick={handleBuscar} className="bg-[#007BFF] hover:bg-[#0056b3]">
-              <Search className="w-4 h-4 mr-2" />
-              Buscar
-            </Button>
+          </div>
+          <Button
+            onClick={handleBuscar}
+            variant="blue"
+            className="detalle__search-button"
+            disabled={buscando}
+          >
+            <Search className="w-4 h-4" />
+            {buscando ? 'Buscando...' : 'Buscar pedido'}
+          </Button>
+        </div>
+      </div>
+
+      {buscando ? (
+        <div className={`${glassPanelClass} detalle__card detalle__empty`}>
+          <p>Buscando pedido...</p>
+        </div>
+      ) : pedidoActual ? (
+        <div className="detalle__stack">
+          <div className={`${glassPanelClass} detalle__card`}>
+            <div className="detalle__current">
+              <div>
+                <p className="detalle__current-label">Pedido actual</p>
+                <div className="detalle__code-row">
+                  <h2 className="detalle__code">{pedidoActual.id}</h2>
+                  {puedeEditarPedido && (
+                    <Button
+                      onClick={() => setEditarDialogOpen(true)}
+                      variant="outline"
+                      size="sm"
+                      className="detalle__edit-button"
+                    >
+                      <Edit className="w-4 h-4" />
+                      Editar pedido
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="detalle__info-grid">
+              <InfoPair label="Centro" value={pedidoActual.centro} />
+              <InfoPair label="Material" value={<Badge variant="outline">{pedidoActual.material}</Badge>} />
+              <InfoPair label="Estado" value={<Badge>{pedidoActual.estado}</Badge>} />
+              <InfoPair label="Transporte" value={<Badge variant={pedidoActual.transporte ? 'default' : 'outline'}>{pedidoActual.transporte ? 'Sí' : 'No'}</Badge>} />
+              <InfoPair label="Fecha de entrada" value={formatDate(pedidoActual.fechaEntrada)} />
+              <InfoPair label="Fecha de vencimiento" value={formatDate(pedidoActual.fechaVencimiento)} />
+              <InfoPair label="Incidencias" value={pedidoActual.incidencias || '-'} fullWidth />
+            </div>
+          </div>
+
+          <div className="detalle__modules">
+            {pedidoActual.moduloFabricacion && (
+              <ModuloProceso
+                tipo="Fabricación"
+                datos={pedidoActual.moduloFabricacion}
+                usuario={usuario}
+                onUpdate={(datos) => handleUpdateModulo('Fabricación', datos)}
+              />
+            )}
+            {pedidoActual.moduloCristal && (
+              <ModuloProceso
+                tipo="Cristal"
+                datos={pedidoActual.moduloCristal}
+                usuario={usuario}
+                onUpdate={(datos) => handleUpdateModulo('Cristal', datos)}
+              />
+            )}
+            {pedidoActual.moduloPersianas && (
+              <ModuloProceso
+                tipo="Persianas"
+                datos={pedidoActual.moduloPersianas}
+                usuario={usuario}
+                onUpdate={(datos) => handleUpdateModulo('Persianas', datos)}
+              />
+            )}
+            {pedidoActual.moduloTransporte && (
+              <ModuloProceso
+                tipo="Transporte"
+                datos={pedidoActual.moduloTransporte}
+                usuario={usuario}
+                onUpdate={(datos) => handleUpdateModulo('Transporte', datos)}
+              />
+            )}
           </div>
         </div>
+      ) : pedidoId && busquedaRealizada ? (
+        <EmptyState mensaje={`No se encontró ningún pedido con el ID ${pedidoId}`} />
+      ) : (
+        <EmptyState mensaje="Introduce un ID y presiona buscar." />
+      )}
 
-        {/* Resultado */}
-        {pedidoActual ? (
-          <div className="space-y-6">
-            {/* Info del pedido */}
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-gray-900">Información del Pedido</h2>
-                {puedeEditarPedido && (
-                  <Button
-                    onClick={() => setEditarDialogOpen(true)}
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                  >
-                    <Edit className="w-4 h-4" />
-                    Editar Pedido
-                  </Button>
-                )}
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-gray-600 text-sm mb-1">ID Pedido</p>
-                  <p className="text-gray-900">{pedidoActual.id}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600 text-sm mb-1">Centro</p>
-                  <p className="text-gray-900">{pedidoActual.centro}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600 text-sm mb-1">Material</p>
-                  <Badge variant="outline">{pedidoActual.material}</Badge>
-                </div>
-                <div>
-                  <p className="text-gray-600 text-sm mb-1">Estado General</p>
-                  <Badge>{pedidoActual.estado}</Badge>
-                </div>
-                <div>
-                  <p className="text-gray-600 text-sm mb-1">Fecha de Entrada</p>
-                  <p className="text-gray-900">{pedidoActual.fechaEntrada}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600 text-sm mb-1">Fecha de Vencimiento</p>
-                  <p className="text-gray-900">{pedidoActual.fechaVencimiento}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600 text-sm mb-1">Transporte</p>
-                  <Badge variant={pedidoActual.transporte ? 'default' : 'outline'}>
-                    {pedidoActual.transporte ? 'Sí' : 'No'}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-gray-600 text-sm mb-1">Incidencias</p>
-                  <p className="text-gray-900">{pedidoActual.incidencias || '-'}</p>
-                </div>
-              </div>
-            </div>
+      {pedidoActual && (
+        <EditarPedidoDialog
+          open={editarDialogOpen}
+          onOpenChange={setEditarDialogOpen}
+          pedido={pedidoActual}
+          onGuardar={handleGuardarEdicion}
+        />
+      )}
+    </div>
+  );
+}
 
-            {/* Módulos */}
-            <div className="grid md:grid-cols-2 gap-6">
-              {pedidoActual.moduloFabricacion && (
-                <ModuloProceso
-                  tipo="Fabricación"
-                  datos={pedidoActual.moduloFabricacion}
-                  usuario={usuario}
-                  onUpdate={(datos) => handleUpdateModulo('Fabricación', datos)}
-                />
-              )}
+function InfoPair({ label, value, fullWidth = false }: { label: string; value: React.ReactNode; fullWidth?: boolean }) {
+  return (
+    <div className={`info-pair ${fullWidth ? 'info-pair--wide' : ''}`}>
+      <p className="info-pair__label">{label}</p>
+      <div className="info-pair__value">{value}</div>
+    </div>
+  );
+}
 
-              {pedidoActual.moduloCristal && (
-                <ModuloProceso
-                  tipo="Cristal"
-                  datos={pedidoActual.moduloCristal}
-                  usuario={usuario}
-                  onUpdate={(datos) => handleUpdateModulo('Cristal', datos)}
-                />
-              )}
-
-              {pedidoActual.moduloPersianas && (
-                <ModuloProceso
-                  tipo="Persianas"
-                  datos={pedidoActual.moduloPersianas}
-                  usuario={usuario}
-                  onUpdate={(datos) => handleUpdateModulo('Persianas', datos)}
-                />
-              )}
-
-              {pedidoActual.moduloTransporte && (
-                <ModuloProceso
-                  tipo="Transporte"
-                  datos={pedidoActual.moduloTransporte}
-                  usuario={usuario}
-                  onUpdate={(datos) => handleUpdateModulo('Transporte', datos)}
-                />
-              )}
-            </div>
-          </div>
-        ) : pedidoId && (
-          <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-            <Package className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-            <p className="text-gray-600">No se encontró ningún pedido con el ID: <strong>{pedidoId}</strong></p>
-          </div>
-        )}
-
-        {/* Dialog de edición */}
-        {pedidoActual && (
-          <EditarPedidoDialog
-            open={editarDialogOpen}
-            onOpenChange={setEditarDialogOpen}
-            pedido={pedidoActual}
-            onGuardar={handleGuardarEdicion}
-          />
-        )}
-      </div>
+function EmptyState({ mensaje }: { mensaje: string }) {
+  return (
+    <div className={`${glassPanelClass} empty-state`}>
+      <Package className="empty-state__icon" />
+      <p>{mensaje}</p>
     </div>
   );
 }

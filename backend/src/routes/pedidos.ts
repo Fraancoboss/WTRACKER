@@ -1,118 +1,245 @@
 import { Router } from 'express';
-import { pool } from '../db/pool.js';
-import { Pedido, pedidoSchema } from '../types/pedido.js';
+import { pedidoService } from '../services/pedido.service.js';
+import { asyncHandler } from '../middleware/error.middleware.js';
+import { authenticate, authorize } from '../middleware/auth.middleware.js';
 
 const router = Router();
 
-const mapPedidoRow = (row: Record<string, any>): Pedido => ({
-  id: row.id,
-  fechaEntrada: row.fecha_entrada,
-  centro: row.centro,
-  material: row.material,
-  fechaVencimiento: row.fecha_vencimiento,
-  estado: row.estado,
-  incidencias: row.incidencias ?? '',
-  transporte: row.transporte,
-  moduloFabricacion: row.modulo_fabricacion ?? undefined,
-  moduloCristal: row.modulo_cristal ?? undefined,
-  moduloPersianas: row.modulo_persianas ?? undefined,
-  moduloTransporte: row.modulo_transporte ?? undefined,
-});
+// All routes require authentication
+router.use(authenticate);
 
-router.get('/', async (_req, res, next) => {
-  try {
-    const { rows } = await pool.query('SELECT * FROM pedidos ORDER BY fecha_entrada DESC');
-    res.json(rows.map(mapPedidoRow));
-  } catch (error) {
-    next(error);
-  }
-});
+/**
+ * @swagger
+ * /api/pedidos:
+ *   get:
+ *     summary: Get all pedidos
+ *     tags: [Pedidos]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: centro
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: material
+ *         schema:
+ *           type: string
+ *           enum: [PVC, Aluminio]
+ *       - in: query
+ *         name: estado
+ *         schema:
+ *           type: string
+ *           enum: [Listo, En curso, Detenido, No iniciado]
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: List of pedidos
+ *       401:
+ *         description: Not authenticated
+ */
+router.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    const filters = {
+      centro: req.query.centro as string,
+      material: req.query.material as string,
+      estado: req.query.estado as string,
+      fechaDesde: req.query.fechaDesde as string,
+      fechaHasta: req.query.fechaHasta as string,
+    };
 
-router.get('/:id', async (req, res, next) => {
-  try {
-    const { rows } = await pool.query('SELECT * FROM pedidos WHERE id = $1', [req.params.id]);
-    if (!rows.length) {
-      return res.status(404).json({ message: 'Pedido no encontrado' });
-    }
-    res.json(mapPedidoRow(rows[0]));
-  } catch (error) {
-    next(error);
-  }
-});
+    const pagination = {
+      page: parseInt(req.query.page as string) || 1,
+      limit: parseInt(req.query.limit as string) || 20,
+    };
 
-router.post('/', async (req, res, next) => {
-  try {
-    const pedido = pedidoSchema.parse(req.body);
-    const query = `
-      INSERT INTO pedidos (
-        id, fecha_entrada, centro, material, fecha_vencimiento,
-        estado, incidencias, transporte,
-        modulo_fabricacion, modulo_cristal, modulo_persianas, modulo_transporte
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-      RETURNING *
-    `;
-    const values = [
-      pedido.id,
-      pedido.fechaEntrada,
-      pedido.centro,
-      pedido.material,
-      pedido.fechaVencimiento,
-      pedido.estado,
-      pedido.incidencias ?? '',
-      pedido.transporte,
-      pedido.moduloFabricacion ?? null,
-      pedido.moduloCristal ?? null,
-      pedido.moduloPersianas ?? null,
-      pedido.moduloTransporte ?? null,
-    ];
-    const { rows } = await pool.query(query, values);
-    res.status(201).json(mapPedidoRow(rows[0]));
-  } catch (error) {
-    next(error);
-  }
-});
+    const result = await pedidoService.getAllPedidos(filters, pagination);
+    res.json({
+      success: true,
+      data: result,
+    });
+  })
+);
 
-router.put('/:id', async (req, res, next) => {
-  try {
-    const pedido = pedidoSchema.parse({ ...req.body, id: req.params.id });
-    const query = `
-      UPDATE pedidos SET
-        fecha_entrada = $2,
-        centro = $3,
-        material = $4,
-        fecha_vencimiento = $5,
-        estado = $6,
-        incidencias = $7,
-        transporte = $8,
-        modulo_fabricacion = $9,
-        modulo_cristal = $10,
-        modulo_persianas = $11,
-        modulo_transporte = $12
-      WHERE id = $1
-      RETURNING *
-    `;
-    const values = [
-      pedido.id,
-      pedido.fechaEntrada,
-      pedido.centro,
-      pedido.material,
-      pedido.fechaVencimiento,
-      pedido.estado,
-      pedido.incidencias ?? '',
-      pedido.transporte,
-      pedido.moduloFabricacion ?? null,
-      pedido.moduloCristal ?? null,
-      pedido.moduloPersianas ?? null,
-      pedido.moduloTransporte ?? null,
-    ];
-    const { rows } = await pool.query(query, values);
-    if (!rows.length) {
-      return res.status(404).json({ message: 'Pedido no encontrado' });
-    }
-    res.json(mapPedidoRow(rows[0]));
-  } catch (error) {
-    next(error);
-  }
-});
+/**
+ * @swagger
+ * /api/pedidos/{id}:
+ *   get:
+ *     summary: Get pedido by ID
+ *     tags: [Pedidos]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Pedido details
+ *       404:
+ *         description: Pedido not found
+ */
+router.get(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const pedido = await pedidoService.getPedidoById(req.params.id);
+    res.json({
+      success: true,
+      data: pedido,
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /api/pedidos:
+ *   post:
+ *     summary: Create new pedido
+ *     tags: [Pedidos]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - id
+ *               - fechaEntrada
+ *               - centro
+ *               - material
+ *               - fechaVencimiento
+ *               - transporte
+ *             properties:
+ *               id:
+ *                 type: string
+ *                 example: PED-2025-007
+ *               fechaEntrada:
+ *                 type: string
+ *                 format: date
+ *                 example: 2025-01-20
+ *               centro:
+ *                 type: string
+ *                 example: Alcobendas
+ *               material:
+ *                 type: string
+ *                 enum: [PVC, Aluminio]
+ *               fechaVencimiento:
+ *                 type: string
+ *                 format: date
+ *               transporte:
+ *                 type: boolean
+ *               incidencias:
+ *                 type: string
+ *               fases:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *     responses:
+ *       201:
+ *         description: Pedido created
+ *       400:
+ *         description: Validation error
+ *       403:
+ *         description: Not authorized
+ */
+router.post(
+  '/',
+  authorize('Admin', 'Oficina'),
+  asyncHandler(async (req, res) => {
+    const pedido = await pedidoService.createPedido(req.body, req.user!.id);
+    res.status(201).json({
+      success: true,
+      data: pedido,
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /api/pedidos/{id}:
+ *   put:
+ *     summary: Update pedido
+ *     tags: [Pedidos]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Pedido updated
+ *       404:
+ *         description: Pedido not found
+ *       403:
+ *         description: Not authorized
+ */
+router.put(
+  '/:id',
+  authorize('Admin', 'Oficina', 'Fabricación', 'Cristal', 'Persianas', 'Transporte'),
+  asyncHandler(async (req, res) => {
+    const pedido = await pedidoService.updatePedido(req.params.id, req.body, req.user!.id);
+    res.json({
+      success: true,
+      data: pedido,
+    });
+  })
+);
+
+/**
+ * @swagger
+ * /api/pedidos/{id}:
+ *   delete:
+ *     summary: Delete pedido
+ *     tags: [Pedidos]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Pedido deleted
+ *       404:
+ *         description: Pedido not found
+ *       403:
+ *         description: Not authorized
+ */
+router.delete(
+  '/:id',
+  authorize('Admin'),
+  asyncHandler(async (req, res) => {
+    await pedidoService.deletePedido(req.params.id, req.user!.id);
+    res.json({
+      success: true,
+      message: 'Pedido eliminado exitosamente',
+    });
+  })
+);
 
 export default router;

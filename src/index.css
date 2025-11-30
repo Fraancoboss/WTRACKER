@@ -47,6 +47,7 @@
   }
 }
 
+
 @layer theme {
   :root, :host {
     --font-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
@@ -2381,4 +2382,27 @@ html {
     opacity: var(--tw-exit-opacity, 1);
     transform: translate3d(var(--tw-exit-translate-x, 0), var(--tw-exit-translate-y, 0), 0) scale3d(var(--tw-exit-scale, 1), var(--tw-exit-scale, 1), var(--tw-exit-scale, 1)) rotate(var(--tw-exit-rotate, 0));
   }
+}
+
+@layer utilities {
+  @keyframes fade-slide {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* keyframes only; use via Tailwind arbitrary animate utilities */
+}
+
+.sidebar-nav-button {
+  color: #d1d5db;
+}
+
+.sidebar-nav-button.sidebar-nav-button--active {
+  color: #fff;
 }

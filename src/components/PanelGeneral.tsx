@@ -1,17 +1,19 @@
-import { useState } from 'react';
-import { Plus, Search, Edit, Package } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Plus, Search, Edit, Package, Copy } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Badge } from './ui/badge';
 import { Pedido, Usuario } from '../types';
 import { NuevoPedidoDialog } from './NuevoPedidoDialog';
 import { EditarPedidoDialog } from './EditarPedidoDialog';
+import { formatDate } from '../lib/formatDate';
+
+const glassPanelClass = 'panel-card';
 
 interface PanelGeneralProps {
   pedidos: Pedido[];
   usuario: Usuario;
-  onAddPedido: (pedido: Pedido) => void;
-  onUpdatePedido: (pedido: Pedido) => void;
+  onAddPedido: (pedido: Pedido) => Promise<void> | void;
+  onUpdatePedido: (pedido: Pedido) => Promise<Pedido>;
 }
 
 export function PanelGeneral({ pedidos, usuario, onAddPedido, onUpdatePedido }: PanelGeneralProps) {
@@ -19,6 +21,8 @@ export function PanelGeneral({ pedidos, usuario, onAddPedido, onUpdatePedido }: 
   const [editarDialogOpen, setEditarDialogOpen] = useState(false);
   const [pedidoAEditar, setPedidoAEditar] = useState<Pedido | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
 
   const canAddPedidos = ['Oficina', 'Admin'].includes(usuario.rol);
   const canEditPedidos = ['Oficina', 'Admin'].includes(usuario.rol);
@@ -28,127 +32,197 @@ export function PanelGeneral({ pedidos, usuario, onAddPedido, onUpdatePedido }: 
     setEditarDialogOpen(true);
   };
 
-  const handleGuardarEdicion = (pedidoEditado: Pedido) => {
-    onUpdatePedido(pedidoEditado);
+  const handleGuardarEdicion = async (pedidoEditado: Pedido) => {
+    await onUpdatePedido(pedidoEditado);
   };
 
-  const filteredPedidos = pedidos.filter((pedido) => {
-    if (!searchTerm) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      pedido.id.toLowerCase().includes(term) ||
-      pedido.centro.toLowerCase().includes(term) ||
-      pedido.estado.toLowerCase().includes(term)
-    );
-  });
+  const filteredPedidos = useMemo(() => {
+    return pedidos.filter((pedido) => {
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        pedido.id.toLowerCase().includes(term) ||
+        pedido.centro.toLowerCase().includes(term) ||
+        pedido.estado.toLowerCase().includes(term)
+      );
+    });
+  }, [pedidos, searchTerm]);
+
+  const orderedPedidos = useMemo(() => {
+    const sorted = [...filteredPedidos].sort((a, b) => {
+      const dateA = new Date(a.fechaEntrada).getTime();
+      const dateB = new Date(b.fechaEntrada).getTime();
+      return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+    });
+    return sorted;
+  }, [filteredPedidos, sortOrder]);
+
+  const resumenEstados = useMemo(() => {
+    const total = pedidos.length || 1;
+    const estados: Array<{ label: string; value: number; cardClass: string; chipClass: string }> = [
+      { label: 'Listo', value: pedidos.filter((p) => p.estado === 'Listo').length, cardClass: 'kpi-card--green', chipClass: 'kpi-chip--green' },
+      { label: 'En curso', value: pedidos.filter((p) => p.estado === 'En curso').length, cardClass: 'kpi-card--amber', chipClass: 'kpi-chip--amber' },
+      { label: 'Detenido', value: pedidos.filter((p) => p.estado === 'Detenido').length, cardClass: 'kpi-card--red', chipClass: 'kpi-chip--red' },
+      { label: 'No iniciado', value: pedidos.filter((p) => p.estado === 'No iniciado').length, cardClass: 'kpi-card--slate', chipClass: 'kpi-chip--slate' },
+    ];
+    return estados.map((estado) => ({
+      ...estado,
+      percentage: Math.round((estado.value / total) * 100),
+    }));
+  }, [pedidos]);
 
   const getEstadoBadge = (estado: Pedido['estado']) => {
-    const variants: Record<Pedido['estado'], { bg: string; text: string }> = {
-      'Listo': { bg: 'bg-green-100 text-green-800 border-green-300', text: '🟢 Listo' },
-      'En curso': { bg: 'bg-yellow-100 text-yellow-800 border-yellow-300', text: '🟡 En curso' },
-      'Detenido': { bg: 'bg-red-100 text-red-800 border-red-300', text: '🔴 Detenido' },
-      'No iniciado': { bg: 'bg-gray-100 text-gray-800 border-gray-300', text: '⚪ No iniciado' },
-    };
-    
-    const style = variants[estado];
-    return (
-      <Badge className={`${style.bg} border`}>
-        {style.text}
-      </Badge>
-    );
+    return <span className={`status-chip status-chip--${estado.replace(' ', '').toLowerCase()}`}>{estado}</span>;
+  };
+
+  const handleCopyId = async (pedidoId: string) => {
+    if (!navigator?.clipboard) {
+      console.warn('Clipboard API no disponible');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(pedidoId);
+      setCopiedId(pedidoId);
+      window.setTimeout(() => {
+        setCopiedId((current) => (current === pedidoId ? null : current));
+      }, 1600);
+    } catch (error) {
+      console.error('No se pudo copiar el ID', error);
+    }
   };
 
   return (
-    <div className="flex-1 bg-gray-50 p-8">
-      {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <div className="flex items-center justify-between mb-6">
+    <div className="main-panel">
+      <div className={`${glassPanelClass} hero-panel`}>
+        <div className="hero-panel__header">
           <div>
-            <h1 className="text-gray-900 mb-1">WTRACKER – Seguimiento de Fabricación</h1>
-            <p className="text-gray-600">Panel General de Pedidos</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-gray-900">{usuario.nombre}</p>
-              <p className="text-gray-600">{usuario.rol}</p>
-            </div>
-            <div className="w-10 h-10 bg-[#007BFF] rounded-full flex items-center justify-center text-white">
-              {usuario.nombre.charAt(0)}
-            </div>
-          </div>
-        </div>
-
-        {/* Search and Actions */}
-        <div className="flex gap-3">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <Input
-              placeholder="Buscar por ID, centro o estado..."
-              className="pl-10"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+            <p className="hero-panel__eyebrow">Operaciones</p>
+            <h2 className="hero-panel__title">Seguimiento integral</h2>
+            <p className="hero-panel__subtitle">Gestiona pedidos y estados desde un único lugar, con filtros rápidos y acciones claras.</p>
           </div>
           {canAddPedidos && (
-            <Button onClick={() => setDialogOpen(true)} className="bg-[#007BFF] hover:bg-[#0056b3]">
-              <Plus className="w-4 h-4 mr-2" />
+            <Button
+              onClick={() => setDialogOpen(true)}
+              variant="blue"
+              className="hero-panel__cta"
+            >
+              <Plus className="w-4 h-4" />
               Nuevo pedido
             </Button>
           )}
         </div>
+
+        <div className="hero-panel__tools">
+          <div className="search-pill">
+            <div className="search-pill__icon">
+              <Search className="w-4 h-4" />
+            </div>
+            <Input
+              placeholder="Buscar por ID, centro o estado..."
+              className="search-pill__input"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="table-filter">
+            <label htmlFor="order" className="table-filter__label">Ordenar</label>
+            <select
+              id="order"
+              className="table-filter__select"
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as 'desc' | 'asc')}
+            >
+              <option value="desc">Fecha descendente</option>
+              <option value="asc">Fecha ascendente</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div className="kpi-grid">
+        {resumenEstados.map((item) => (
+          <div
+            key={item.label}
+            className={`kpi-card ${item.cardClass}`}
+          >
+            <div className="kpi-card__header">
+              <p className="kpi-card__label">{item.label}</p>
+              <span className={`kpi-chip ${item.chipClass}`}>
+                {item.percentage}%
+              </span>
+            </div>
+            <div className="kpi-card__value">
+              <span className="kpi-card__value-number">{item.value}</span>
+              <span className="kpi-card__value-caption">Pedidos</span>
+            </div>
+            <div className="kpi-card__progress">
+              <div className="kpi-card__progress-bar" style={{ width: `${item.percentage}%` }} />
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Pedidos Table */}
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-100 border-b">
+      <div className={`${glassPanelClass} table-card table-wrapper`}>
+        <div className="table-scroll">
+          <table>
+            <thead>
               <tr>
-                <th className="px-6 py-3 text-left text-gray-700">🆔 ID Pedido</th>
-                <th className="px-6 py-3 text-left text-gray-700">🕓 Registro de entrada</th>
-                <th className="px-6 py-3 text-left text-gray-700">🏢 Centro</th>
-                <th className="px-6 py-3 text-left text-gray-700">⚙️ Material</th>
-                <th className="px-6 py-3 text-left text-gray-700">📅 Fecha de vencimiento</th>
-                <th className="px-6 py-3 text-left text-gray-700">🔖 Estado</th>
-                <th className="px-6 py-3 text-left text-gray-700">💬 Incidencias</th>
-                <th className="px-6 py-3 text-left text-gray-700">🚚 Transporte</th>
+                <th>ID Pedido</th>
+                <th>Registro</th>
+                <th>Centro</th>
+                <th>Material</th>
+                <th>Vencimiento</th>
+                <th>Estado</th>
+                <th>Incidencias</th>
+                <th>Transporte</th>
                 {canEditPedidos && (
-                  <th className="px-6 py-3 text-left text-gray-700">Acciones</th>
+                  <th>Acciones</th>
                 )}
               </tr>
             </thead>
             <tbody>
-              {filteredPedidos.map((pedido) => (
-                <tr key={pedido.id} className="border-b hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 text-gray-900">{pedido.id}</td>
-                  <td className="px-6 py-4 text-gray-600">{pedido.fechaEntrada}</td>
-                  <td className="px-6 py-4 text-gray-900">{pedido.centro}</td>
-                  <td className="px-6 py-4">
-                    <Badge variant="outline">{pedido.material}</Badge>
+              {orderedPedidos.map((pedido) => (
+                <tr key={pedido.id} className="table-row">
+                  <td>
+                    <div className="table-id">
+                      <span>{pedido.id}</span>
+                      <button
+                        type="button"
+                        className={`copy-button ${copiedId === pedido.id ? 'copy-button--active' : ''}`}
+                        onClick={() => handleCopyId(pedido.id)}
+                        aria-label="Copiar ID del pedido"
+                      >
+                        <Copy className="copy-button__icon" />
+                      </button>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 text-gray-600">{pedido.fechaVencimiento}</td>
-                  <td className="px-6 py-4">
-                    {getEstadoBadge(pedido.estado)}
+                  <td>{formatDate(pedido.fechaEntrada)}</td>
+                  <td>{pedido.centro}</td>
+                  <td>
+                    <span className="pill pill--muted">
+                      {pedido.material}
+                    </span>
                   </td>
-                  <td className="px-6 py-4 text-gray-600 max-w-xs truncate">
-                    {pedido.incidencias || '-'}
-                  </td>
-                  <td className="px-6 py-4">
-                    <Badge variant={pedido.transporte ? 'default' : 'outline'}>
-                      {pedido.transporte ? 'Sí' : 'No'}
-                    </Badge>
+                  <td>{formatDate(pedido.fechaVencimiento)}</td>
+                  <td>{getEstadoBadge(pedido.estado)}</td>
+                  <td className="truncate">{pedido.incidencias || '-'}</td>
+                  <td>
+                    <span className={`pill ${pedido.transporte ? 'pill--active' : 'pill--muted'}`}>
+                      {pedido.transporte ? 'Programado' : 'Pendiente'}
+                    </span>
                   </td>
                   {canEditPedidos && (
-                    <td className="px-6 py-4">
-                      <Button
-                        variant="ghost"
-                        size="sm"
+                    <td>
+                      <button
+                        type="button"
+                        className="table-edit"
                         onClick={() => handleEditarPedido(pedido)}
-                        className="gap-2"
                       >
                         <Edit className="w-4 h-4" />
                         Editar
-                      </Button>
+                      </button>
                     </td>
                   )}
                 </tr>
@@ -157,9 +231,9 @@ export function PanelGeneral({ pedidos, usuario, onAddPedido, onUpdatePedido }: 
           </table>
         </div>
 
-        {filteredPedidos.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            <Package className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+        {orderedPedidos.length === 0 && (
+          <div className="empty-state">
+            <Package className="empty-state__icon" />
             <p>No se encontraron pedidos</p>
           </div>
         )}

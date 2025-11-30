@@ -1,160 +1,182 @@
-import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import { useState, useEffect } from 'react';
+import { Dialog, DialogContent, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Textarea } from './ui/textarea';
-import { Pedido, Material } from '../types';
+import { Pedido, Material, EstadoPedido } from '../types';
+import { generatePedidoId } from '../lib/generatePedidoId';
 
 interface NuevoPedidoDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onGuardar: (pedido: Pedido) => void;
+  onGuardar: (pedido: Pedido) => Promise<void> | void;
 }
 
 export function NuevoPedidoDialog({ open, onOpenChange, onGuardar }: NuevoPedidoDialogProps) {
   const [formData, setFormData] = useState({
-    id: '',
+    id: generatePedidoId(),
     centro: '',
     material: 'PVC' as Material,
     fechaVencimiento: '',
     transporte: false,
     observaciones: '',
+    estado: 'No iniciado' as EstadoPedido,
   });
+  const [saving, setSaving] = useState(false);
 
   const centros = ['Alcobendas', 'Usera', 'Rivas', 'Alcorcón', 'Getafe', 'Leganés'];
+  const estados: EstadoPedido[] = ['No iniciado', 'En curso', 'Detenido', 'Listo'];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    const moduloBase = {
+      estado: 'Pendiente' as const,
+      observaciones: '',
+      operario: '',
+    };
+
     const nuevoPedido: Pedido = {
       id: formData.id,
       fechaEntrada: new Date().toISOString().split('T')[0],
       centro: formData.centro,
       material: formData.material,
       fechaVencimiento: formData.fechaVencimiento,
-      estado: 'No iniciado',
+      estado: formData.estado,
       incidencias: formData.observaciones,
       transporte: formData.transporte,
-      moduloFabricacion: {
-        estado: 'Pendiente',
-        observaciones: '',
-        operario: '',
-      },
-      moduloCristal: {
-        estado: 'Pendiente',
-        observaciones: '',
-        operario: '',
-      },
-      moduloPersianas: {
-        estado: 'Pendiente',
-        observaciones: '',
-        operario: '',
-      },
-      moduloTransporte: {
-        estado: formData.transporte,
-        observaciones: '',
-      },
+      moduloFabricacion: { ...moduloBase },
+      moduloCristal: { ...moduloBase },
+      moduloPersianas: { ...moduloBase },
+      moduloTransporte: formData.transporte ? { ...moduloBase } : undefined,
     };
 
-    onGuardar(nuevoPedido);
-    
-    // Reset form
-    setFormData({
-      id: '',
-      centro: '',
-      material: 'PVC',
-      fechaVencimiento: '',
-      transporte: false,
-      observaciones: '',
-    });
-    
-    onOpenChange(false);
+    try {
+      setSaving(true);
+      await onGuardar(nuevoPedido);
+      setFormData({
+        id: generatePedidoId(),
+        centro: '',
+        material: 'PVC',
+        fechaVencimiento: '',
+        transporte: false,
+        observaciones: '',
+        estado: 'No iniciado',
+      });
+      onOpenChange(false);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSaving(false);
+    }
   };
+
+  useEffect(() => {
+    if (open) {
+      setFormData((prev) => ({
+        ...prev,
+        id: generatePedidoId(),
+      }));
+    }
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Nuevo Pedido</DialogTitle>
-        </DialogHeader>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="id">ID Pedido *</Label>
-            <Input
-              id="id"
-              value={formData.id}
-              onChange={(e) => setFormData({ ...formData, id: e.target.value })}
-              required
-              placeholder="Ej: PED-2025-001"
-            />
-          </div>
+      <DialogContent className="form-dialog">
+        <div className="form-dialog__header">
+          <DialogTitle>Nuevo pedido</DialogTitle>
+          <p>Registra una orden con todos los datos clave antes de enviarla al taller.</p>
+        </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="centro">Centro / Cliente *</Label>
-            <Select
-              value={formData.centro}
-              onValueChange={(value) => setFormData({ ...formData, centro: value })}
-              required
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona un centro" />
-              </SelectTrigger>
-              <SelectContent>
+        <form onSubmit={handleSubmit} className="form-stack">
+          <div className="form-grid">
+            <div className="form-field">
+              <label htmlFor="id" className="form-label">ID Pedido *</label>
+              <Input
+                id="id"
+                value={formData.id}
+                onChange={(e) => setFormData({ ...formData, id: e.target.value })}
+                required
+                placeholder="Ej: PED-2025-001"
+              />
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="centro" className="form-label">Centro / Cliente *</label>
+              <select
+                id="centro"
+                className="form-select"
+                value={formData.centro}
+                onChange={(e) => setFormData({ ...formData, centro: e.target.value })}
+                required
+              >
+                <option value="" disabled>Selecciona un centro</option>
                 {centros.map((centro) => (
-                  <SelectItem key={centro} value={centro}>
+                  <option key={centro} value={centro}>
                     {centro}
-                  </SelectItem>
+                  </option>
                 ))}
-              </SelectContent>
-            </Select>
+              </select>
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="material" className="form-label">Material *</label>
+              <select
+                id="material"
+                className="form-select"
+                value={formData.material}
+                onChange={(e) => setFormData({ ...formData, material: e.target.value as Material })}
+                required
+              >
+                <option value="PVC">PVC</option>
+                <option value="Aluminio">Aluminio</option>
+              </select>
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="estado" className="form-label">Estado inicial *</label>
+              <select
+                id="estado"
+                className="form-select"
+                value={formData.estado}
+                onChange={(e) => setFormData({ ...formData, estado: e.target.value as EstadoPedido })}
+              >
+                {estados.map((estado) => (
+                  <option key={estado} value={estado}>
+                    {estado}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="fechaVencimiento" className="form-label">Fecha de vencimiento *</label>
+              <Input
+                id="fechaVencimiento"
+                type="date"
+                value={formData.fechaVencimiento}
+                onChange={(e) => setFormData({ ...formData, fechaVencimiento: e.target.value })}
+                required
+              />
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="material">Material *</Label>
-            <Select
-              value={formData.material}
-              onValueChange={(value: Material) => setFormData({ ...formData, material: value })}
-              required
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="PVC">PVC</SelectItem>
-                <SelectItem value="Aluminio">Aluminio</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="fechaVencimiento">Fecha de Vencimiento *</Label>
-            <Input
-              id="fechaVencimiento"
-              type="date"
-              value={formData.fechaVencimiento}
-              onChange={(e) => setFormData({ ...formData, fechaVencimiento: e.target.value })}
-              required
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
+          <div className="form-checkbox">
             <input
               type="checkbox"
               id="transporte"
               checked={formData.transporte}
               onChange={(e) => setFormData({ ...formData, transporte: e.target.checked })}
-              className="w-4 h-4"
             />
-            <Label htmlFor="transporte">¿Requiere transporte?</Label>
+            <label htmlFor="transporte" className="form-checkbox__label">
+              ¿Requiere transporte?
+            </label>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="observaciones">Observaciones iniciales</Label>
-            <Textarea
+          <div className="form-field">
+            <label htmlFor="observaciones" className="form-label">Observaciones iniciales</label>
+            <textarea
               id="observaciones"
+              className="form-textarea"
               value={formData.observaciones}
               onChange={(e) => setFormData({ ...formData, observaciones: e.target.value })}
               placeholder="Comentarios o notas sobre el pedido..."
@@ -162,12 +184,14 @@ export function NuevoPedidoDialog({ open, onOpenChange, onGuardar }: NuevoPedido
             />
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <div className="form-actions">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancelar
             </Button>
-            <Button type="submit">Guardar Pedido</Button>
-          </DialogFooter>
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Guardando...' : 'Guardar Pedido'}
+            </Button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

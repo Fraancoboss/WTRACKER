@@ -1,17 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Textarea } from './ui/textarea';
-import { Pedido, Material } from '../types';
+import { Pedido, Material, EstadoPedido } from '../types';
 
 interface EditarPedidoDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   pedido: Pedido;
-  onGuardar: (pedido: Pedido) => void;
+  onGuardar: (pedido: Pedido) => Promise<void>;
 }
 
 export function EditarPedidoDialog({ open, onOpenChange, pedido, onGuardar }: EditarPedidoDialogProps) {
@@ -23,6 +20,7 @@ export function EditarPedidoDialog({ open, onOpenChange, pedido, onGuardar }: Ed
     fechaVencimiento: pedido.fechaVencimiento,
     transporte: pedido.transporte,
     incidencias: pedido.incidencias,
+    estado: pedido.estado,
   });
 
   // Actualizar form cuando cambia el pedido
@@ -35,12 +33,15 @@ export function EditarPedidoDialog({ open, onOpenChange, pedido, onGuardar }: Ed
       fechaVencimiento: pedido.fechaVencimiento,
       transporte: pedido.transporte,
       incidencias: pedido.incidencias,
+      estado: pedido.estado,
     });
   }, [pedido]);
 
   const centros = ['Alcobendas', 'Usera', 'Rivas', 'Alcorcón', 'Getafe', 'Leganés'];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const pedidoActualizado: Pedido = {
@@ -52,110 +53,134 @@ export function EditarPedidoDialog({ open, onOpenChange, pedido, onGuardar }: Ed
       fechaVencimiento: formData.fechaVencimiento,
       transporte: formData.transporte,
       incidencias: formData.incidencias,
-      // Actualizar módulo transporte si cambió el checkbox
-      moduloTransporte: {
-        ...pedido.moduloTransporte,
-        estado: formData.transporte,
-      },
+      estado: formData.estado,
+      moduloTransporte: formData.transporte
+        ? (pedido.moduloTransporte ?? {
+            estado: 'Pendiente',
+            observaciones: '',
+            operario: '',
+          })
+        : undefined,
     };
 
-    onGuardar(pedidoActualizado);
-    onOpenChange(false);
+    try {
+      setSaving(true);
+      await onGuardar(pedidoActualizado);
+      onOpenChange(false);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Editar Pedido</DialogTitle>
-        </DialogHeader>
+      <DialogContent className="form-dialog">
+        <div className="form-dialog__header">
+          <DialogTitle>Editar pedido</DialogTitle>
+          <p>Ajusta los datos clave y sincroniza el estado antes de guardar.</p>
+        </div>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="id">ID Pedido *</Label>
-            <Input
-              id="id"
-              value={formData.id}
-              onChange={(e) => setFormData({ ...formData, id: e.target.value })}
-              required
-              placeholder="Ej: PED-2025-001"
-            />
-          </div>
+        <form onSubmit={handleSubmit} className="form-stack">
+          <div className="form-grid">
+            <div className="form-field">
+              <label htmlFor="id" className="form-label">ID Pedido *</label>
+              <Input
+                id="id"
+                value={formData.id}
+                onChange={(e) => setFormData({ ...formData, id: e.target.value })}
+                required
+                placeholder="Ej: PED-2025-001"
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="centro">Centro / Cliente *</Label>
-            <Select
-              value={formData.centro}
-              onValueChange={(value) => setFormData({ ...formData, centro: value })}
-              required
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona un centro" />
-              </SelectTrigger>
-              <SelectContent>
+            <div className="form-field">
+              <label htmlFor="centro" className="form-label">Centro / Cliente *</label>
+              <select
+                id="centro"
+                className="form-select"
+                value={formData.centro}
+                onChange={(e) => setFormData({ ...formData, centro: e.target.value })}
+                required
+              >
+                <option value="" disabled>Selecciona un centro</option>
                 {centros.map((centro) => (
-                  <SelectItem key={centro} value={centro}>
+                  <option key={centro} value={centro}>
                     {centro}
-                  </SelectItem>
+                  </option>
                 ))}
-              </SelectContent>
-            </Select>
+              </select>
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="material" className="form-label">Material *</label>
+              <select
+                id="material"
+                className="form-select"
+                value={formData.material}
+                onChange={(e) => setFormData({ ...formData, material: e.target.value as Material })}
+                required
+              >
+                <option value="PVC">PVC</option>
+                <option value="Aluminio">Aluminio</option>
+              </select>
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="estado" className="form-label">Estado *</label>
+              <select
+                id="estado"
+                className="form-select"
+                value={formData.estado}
+                onChange={(e) => setFormData({ ...formData, estado: e.target.value as EstadoPedido })}
+              >
+                {['No iniciado', 'En curso', 'Detenido', 'Listo'].map((estado) => (
+                  <option key={estado} value={estado}>
+                    {estado}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="fechaEntrada" className="form-label">Fecha de entrada *</label>
+              <Input
+                id="fechaEntrada"
+                type="date"
+                value={formData.fechaEntrada}
+                onChange={(e) => setFormData({ ...formData, fechaEntrada: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="fechaVencimiento" className="form-label">Fecha de vencimiento *</label>
+              <Input
+                id="fechaVencimiento"
+                type="date"
+                value={formData.fechaVencimiento}
+                onChange={(e) => setFormData({ ...formData, fechaVencimiento: e.target.value })}
+                required
+              />
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="material">Material *</Label>
-            <Select
-              value={formData.material}
-              onValueChange={(value: Material) => setFormData({ ...formData, material: value })}
-              required
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="PVC">PVC</SelectItem>
-                <SelectItem value="Aluminio">Aluminio</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="fechaEntrada">Fecha de Entrada *</Label>
-            <Input
-              id="fechaEntrada"
-              type="date"
-              value={formData.fechaEntrada}
-              onChange={(e) => setFormData({ ...formData, fechaEntrada: e.target.value })}
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="fechaVencimiento">Fecha de Vencimiento *</Label>
-            <Input
-              id="fechaVencimiento"
-              type="date"
-              value={formData.fechaVencimiento}
-              onChange={(e) => setFormData({ ...formData, fechaVencimiento: e.target.value })}
-              required
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
+          <div className="form-checkbox">
             <input
               type="checkbox"
               id="transporte"
               checked={formData.transporte}
               onChange={(e) => setFormData({ ...formData, transporte: e.target.checked })}
-              className="w-4 h-4"
             />
-            <Label htmlFor="transporte">¿Requiere transporte?</Label>
+            <label htmlFor="transporte" className="form-checkbox__label">¿Requiere transporte?</label>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="incidencias">Incidencias / Observaciones</Label>
-            <Textarea
+          <div className="form-field">
+            <label htmlFor="incidencias" className="form-label">Incidencias / Observaciones</label>
+            <textarea
               id="incidencias"
+              className="form-textarea"
               value={formData.incidencias}
               onChange={(e) => setFormData({ ...formData, incidencias: e.target.value })}
               placeholder="Comentarios o notas sobre el pedido..."
@@ -163,14 +188,14 @@ export function EditarPedidoDialog({ open, onOpenChange, pedido, onGuardar }: Ed
             />
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <div className="form-actions">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancelar
             </Button>
-            <Button type="submit" className="bg-[#007BFF] hover:bg-[#0056b3]">
-              Guardar Cambios
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Guardando...' : 'Guardar Cambios'}
             </Button>
-          </DialogFooter>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

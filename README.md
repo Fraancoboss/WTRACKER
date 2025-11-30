@@ -47,10 +47,11 @@ Pasos rápidos para compañeros (Windows 11 incluido):
 6. Abre la consola de PostgreSQL (`psql`) y ejecuta:
    ```sql
    CREATE DATABASE wtracker;
-   -- importa el esquema
-   \i backend/sql/schema.sql
+   -- Conéctate con: \c wtracker
+   -- importa el esquema (usa rutas absolutas o comillas para rutas con espacios)
+   \i 'C:/Users/<tu_usuario>/ruta/al/proyecto/backend/sql/schema.sql'
    -- importa los datos de ejemplo
-   \i backend/sql/seed.sql
+   \i 'C:/Users/<tu_usuario>/ruta/al/proyecto/backend/sql/seed.sql'
    ```
    Si tu usuario PostgreSQL no es `postgres`, actualiza `DATABASE_URL` en `backend/.env` para reflejar `postgresql://<usuario>:<contraseña>@localhost:5432/wtracker`.
 7. En otra terminal, dentro de la raíz del proyecto:

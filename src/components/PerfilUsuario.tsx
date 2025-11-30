@@ -1,176 +1,212 @@
-import { Wrench, Square as WindowIcon, Blinds, Truck, User, Shield } from 'lucide-react';
-import { Card } from './ui/card';
-import { Badge } from './ui/badge';
+import { useEffect, useState } from 'react';
+import { Wrench, Square as WindowIcon, Blinds, Truck, Shield } from 'lucide-react';
 import { Button } from './ui/button';
+import { Dialog, DialogContent, DialogTitle } from './ui/dialog';
+import { Input } from './ui/input';
 import { Usuario, Modulo } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import { getSystemUsers, getUserPasswordById, SystemUserRecord } from '../lib/systemUsers';
 
 interface PerfilUsuarioProps {
   usuario: Usuario;
 }
 
 export function PerfilUsuario({ usuario }: PerfilUsuarioProps) {
-  const moduloConfig: Record<Modulo, { color: string; icon: any; label: string }> = {
-    'Fabricación': { color: 'bg-blue-500', icon: Wrench, label: '🧱 Fabricación' },
-    'Cristal': { color: 'bg-green-500', icon: WindowIcon, label: '🪟 Cristal' },
-    'Persianas': { color: 'bg-orange-500', icon: Blinds, label: '🌀 Persianas' },
-    'Transporte': { color: 'bg-red-500', icon: Truck, label: '🚚 Transporte' },
+  const moduloConfig: Record<Modulo, { className: string; icon: React.ElementType; label: string }> = {
+    'Fabricación': { className: 'profile-module--fabricacion', icon: Wrench, label: 'Fabricación' },
+    'Cristal': { className: 'profile-module--cristal', icon: WindowIcon, label: 'Cristal' },
+    'Persianas': { className: 'profile-module--persianas', icon: Blinds, label: 'Persianas' },
+    'Transporte': { className: 'profile-module--transporte', icon: Truck, label: 'Transporte' },
   };
 
-  const canEditProfile = ['Admin', 'Oficina'].includes(usuario.rol);
+  const assignedModules = usuario.modulosAsignados ?? [];
+  const canEditProfile = usuario.rol === 'Admin';
+  const [editOpen, setEditOpen] = useState(false);
+  const [systemUsers, setSystemUsers] = useState<SystemUserRecord[]>(() =>
+    usuario.rol === 'Admin' ? getSystemUsers() : []
+  );
+  const [formValues, setFormValues] = useState({
+    nombre: usuario.nombre,
+    password: getUserPasswordById(String(usuario.id)),
+  });
+  useEffect(() => {
+    setFormValues({
+      nombre: usuario.nombre,
+      password: getUserPasswordById(String(usuario.id)),
+    });
+    if (usuario.rol === 'Admin') {
+      setSystemUsers(getSystemUsers());
+    }
+  }, [usuario]);
+
+  const handleProfileSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await updateProfile({
+      nombre: formValues.nombre,
+      password: formValues.password,
+    });
+    if (usuario.rol === 'Admin') {
+      setSystemUsers(getSystemUsers());
+    }
+    setEditOpen(false);
+  };
+
+  const initials = usuario.nombre
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
+  const permissions: Array<{ title: string; description: string; condition?: boolean; warning?: boolean }> = [
+    {
+      title: 'Administrador total',
+      description: 'Acceso completo a todos los módulos y configuración del sistema',
+      condition: usuario.rol === 'Admin',
+    },
+    {
+      title: 'Crear nuevos pedidos',
+      description: 'Añade pedidos desde el Panel General y gestiona su ciclo',
+      condition: usuario.rol === 'Admin' || usuario.rol === 'Oficina',
+    },
+    {
+      title: 'Editar módulos asignados',
+      description: 'Actualiza estado, fechas y observaciones de tus módulos',
+      condition: assignedModules.length > 0,
+    },
+    {
+      title: 'Ver Panel General',
+      description: 'Consulta el estado global de la producción en tiempo real',
+      condition: true,
+    },
+    {
+      title: 'Solo lectura',
+      description: 'Sin permisos para modificar pedidos ni módulos',
+      condition: usuario.rol === 'Visualización',
+      warning: true,
+    },
+  ];
 
   return (
-    <div className="flex-1 bg-gray-50 p-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-gray-900 mb-1">Perfil de Usuario</h1>
-          <p className="text-gray-600">Información personal y permisos del sistema</p>
-        </div>
-
-        {/* User Info Card */}
-        <Card className="p-8 mb-6">
-          <div className="flex items-start gap-6 mb-8">
-            <div className="w-24 h-24 bg-[#007BFF] rounded-full flex items-center justify-center text-white text-4xl flex-shrink-0">
-              {usuario.nombre.split(' ').map(n => n[0]).join('')}
-            </div>
-            <div className="flex-1">
-              <h2 className="text-gray-900 mb-2">{usuario.nombre}</h2>
-              <div className="flex items-center gap-3 mb-4">
-                <Badge className="bg-[#007BFF] text-white">
-                  <Shield className="w-3 h-3 mr-1" />
-                  {usuario.rol}
-                </Badge>
-                <span className="text-gray-600">ID: {usuario.id}</span>
+    <div className="profile">
+      <div className="profile__column">
+        <section className="profile-card panel-card">
+          <div className="profile-card__header">
+            <div className="profile-avatar">{initials}</div>
+            <div>
+              <p className="profile-eyebrow">Usuario</p>
+              <h2 className="profile-name">{usuario.nombre}</h2>
+              <div className="profile-role">
+                <Shield className="profile-role__icon" />
+                <span>{usuario.rol}</span>
               </div>
-              {canEditProfile && (
-                <Button variant="outline" size="sm">
-                  Editar perfil
-                </Button>
-              )}
+              <p className="profile-id">ID: {usuario.id}</p>
             </div>
+            {canEditProfile && (
+              <Button variant="outline" size="sm" className="profile-edit">
+                Editar perfil
+              </Button>
+            )}
           </div>
 
-          <div className="border-t pt-6">
-            <h3 className="text-gray-900 mb-4">Módulos asignados</h3>
-            
-            {usuario.modulosAsignados.length > 0 ? (
-              <div className="grid md:grid-cols-2 gap-4">
-                {usuario.modulosAsignados.map((modulo) => {
+          {assignedModules.length > 0 && (
+            <div className="profile-section">
+              <p className="profile-section__label">Módulos asignados</p>
+              <div className="profile-modules">
+                {assignedModules.map((modulo) => {
                   const config = moduloConfig[modulo];
                   const Icon = config.icon;
-                  
                   return (
-                    <div
-                      key={modulo}
-                      className={`${config.color} text-white rounded-lg p-4 flex items-center gap-3`}
-                    >
-                      <Icon className="w-6 h-6" />
+                    <div key={modulo} className={`profile-module ${config.className}`}>
+                      <Icon className="profile-module__icon" />
                       <span>{config.label}</span>
                     </div>
                   );
                 })}
               </div>
-            ) : (
-              <div className="bg-gray-100 rounded-lg p-6 text-center">
-                <User className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                <p className="text-gray-600">
-                  {usuario.rol === 'Visualización' 
-                    ? 'Usuario de solo lectura - No tiene módulos asignados para edición'
-                    : 'No tienes módulos específicos asignados'
-                  }
-                </p>
-              </div>
-            )}
-          </div>
-        </Card>
-
-        {/* Permissions Info */}
-        <Card className="p-6">
-          <h3 className="text-gray-900 mb-4">Permisos del sistema</h3>
-          <div className="space-y-3">
-            {usuario.rol === 'Admin' && (
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-green-600 text-sm">✓</span>
-                </div>
-                <div>
-                  <p className="text-gray-900">Administrador Total</p>
-                  <p className="text-gray-600 text-sm">
-                    Acceso completo a todos los módulos, gestión de usuarios y configuración del sistema
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {usuario.rol === 'Oficina' && (
-              <>
-                <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-green-600 text-sm">✓</span>
-                  </div>
-                  <div>
-                    <p className="text-gray-900">Crear nuevos pedidos</p>
-                    <p className="text-gray-600 text-sm">
-                      Puedes añadir nuevos pedidos al sistema desde el Panel General
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-green-600 text-sm">✓</span>
-                  </div>
-                  <div>
-                    <p className="text-gray-900">Ver todos los pedidos</p>
-                    <p className="text-gray-600 text-sm">
-                      Acceso de lectura a toda la información de pedidos y módulos
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {usuario.modulosAsignados.length > 0 && (
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-green-600 text-sm">✓</span>
-                </div>
-                <div>
-                  <p className="text-gray-900">Editar módulos asignados</p>
-                  <p className="text-gray-600 text-sm">
-                    Puedes modificar el estado, fechas y observaciones de tus módulos asignados
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span className="text-green-600 text-sm">✓</span>
-              </div>
-              <div>
-                <p className="text-gray-900">Ver Panel General</p>
-                <p className="text-gray-600 text-sm">
-                  Acceso al tablero principal con todos los pedidos del sistema
-                </p>
-              </div>
             </div>
+          )}
+        </section>
 
-            {usuario.rol === 'Visualización' && (
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 bg-yellow-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-yellow-600 text-sm">!</span>
+        <section className="profile-card panel-card profile-permissions">
+          <p className="profile-section__label">Permisos del sistema</p>
+          <div className="profile-permissions__list">
+            {permissions
+              .filter((item) => item.condition)
+              .map((item) => (
+                <div
+                  key={item.title}
+                  className={`profile-permission ${item.warning ? 'profile-permission--warning' : ''}`}
+                >
+                  <div className="profile-permission__icon">
+                    {item.warning ? '!' : '✓'}
+                  </div>
+                  <div>
+                    <p className="profile-permission__title">{item.title}</p>
+                    <p className="profile-permission__text">{item.description}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-gray-900">Solo lectura</p>
-                  <p className="text-gray-600 text-sm">
-                    No puedes modificar información de pedidos ni módulos
-                  </p>
-                </div>
-              </div>
-            )}
+              ))}
           </div>
-        </Card>
+        </section>
+
+        {usuario.rol === 'Admin' && (
+          <section className="profile-card panel-card profile-users">
+            <p className="profile-section__label">Usuarios del sistema</p>
+            <div className="profile-users__table">
+              <div className="profile-users__row profile-users__row--head">
+                <span>Nombre</span>
+                <span>Rol</span>
+                <span>Contraseña</span>
+              </div>
+              {systemUsers.map((user) => (
+                <div key={user.id} className="profile-users__row">
+                  <span>{user.nombre}</span>
+                  <span className="profile-users__role">{user.rol}</span>
+                  <span className="profile-users__password">{user.password}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="form-dialog">
+          <DialogTitle>Editar perfil</DialogTitle>
+          <form className="form-stack" onSubmit={handleProfileSubmit}>
+            <div className="form-field">
+              <label htmlFor="perfil-nombre" className="form-label">
+                Usuario
+              </label>
+              <Input
+                id="perfil-nombre"
+                value={formValues.nombre}
+                onChange={(e) => setFormValues((prev) => ({ ...prev, nombre: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor="perfil-password" className="form-label">
+                Contraseña
+              </label>
+              <Input
+                id="perfil-password"
+                type="text"
+                value={formValues.password}
+                onChange={(e) => setFormValues((prev) => ({ ...prev, password: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="form-actions">
+              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit">Guardar cambios</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
